@@ -1,0 +1,30 @@
+{
+  "name": "ci-cd",
+  "version": "1.0.0",
+  "main": "src/server.js",
+  "description": "getting ready for building a complete cicd workflow to automate the process ",
+  "scripts": {
+    "start": "node src/server.js",
+    "test": "jest --detectOpenHandles",
+    "dynamodb": "docker run -p 8000:8000 amazon/dynamodb-local"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Muhammad-Ahmad17/CI-CD.git"
+  },
+  "author": "MUHAMMAD-AHMAD",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Muhammad-Ahmad17/CI-CD/issues"
+  },
+  "homepage": "https://github.com/Muhammad-Ahmad17/CI-CD#readme",
+  "dependencies": {
+    "aws-sdk": "^2.1692.0",
+    "dot-env": "^0.0.1",
+    "express": "^5.1.0",
+    "jest": "^30.0.5",
+    "nodemon": "^3.1.10",
+    "supertest": "^7.1.4",
+    "uuid": "^11.1.0"
+  }
+}
