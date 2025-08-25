@@ -1,144 +1,142 @@
-name: CD Pipeline
+name: EB Full CI/CD Deployment
 
 on:
   push:
     branches:
-      - main  # Trigger pipeline on main branch
+      - main
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-1
+      EB_APP_NAME: ci-cd-app
+      EB_ENV_NAME: cicd-env
+      S3_BUCKET: ci-cd-eb-bundles
 
     steps:
-      # Step 1: Checkout repo
-      - name: Checkout repo
-        uses: actions/checkout@v4
+    # Step 1: Checkout code
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      # Step 2: Setup Node.js
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'  # Use Node.js 20 for consistency with EB
+    # Step 2: Setup Node.js
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
 
-      # Step 3: Install dependencies
-      - name: Install dependencies
-        run: npm install
+    # Step 3: Install dependencies
+    - name: Install dependencies
+      run: npm install
 
-      # Step 4: Zip the app
-      - name: Zip the app
-        run: zip -r app.zip . -x "*.git*"
+    # Step 4: Zip the application
+    - name: Zip application
+      run: zip -r app.zip . -x "*.git*"
 
-      # Step 5: Configure AWS credentials
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
+    # Step 5: Configure AWS CLI
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
 
-      # Step 6: Ensure S3 bucket exists
-      - name: Ensure S3 bucket exists
-        run: |
-          S3_BUCKET="ci-cd-eb-bundles"
-          if ! aws s3api head-bucket --bucket $S3_BUCKET 2>/dev/null; then
-            echo "Creating S3 bucket..."
-            aws s3api create-bucket --bucket $S3_BUCKET --region us-east-1 --create-bucket-configuration LocationConstraint=us-east-1
-          else
-            echo "S3 bucket exists"
-          fi
+    # Step 6: Ensure S3 bucket exists
+    - name: Ensure S3 bucket exists
+      run: |
+        if ! aws s3api head-bucket --bucket $S3_BUCKET 2>/dev/null; then
+          echo "Creating S3 bucket..."
+          aws s3api create-bucket \
+            --bucket $S3_BUCKET \
+            --region $AWS_REGION \
+            --create-bucket-configuration LocationConstraint=$AWS_REGION
+        else
+          echo "S3 bucket already exists."
 
-      # Step 7: Ensure Elastic Beanstalk application exists
-      - name: Ensure EB application exists
-        run: |
-          EB_APP_NAME="ci-cd-app"
-          if ! aws elasticbeanstalk describe-applications --application-names $EB_APP_NAME --region us-east-1 | grep $EB_APP_NAME; then
-            echo "Creating EB application..."
-            aws elasticbeanstalk create-application --application-name $EB_APP_NAME --region us-east-1
-          else
-            echo "EB application exists"
-          fi
-
-      # Step 8: Upload app.zip to S3
-      - name: Upload app to S3
-        run: |
-          S3_BUCKET="ci-cd-eb-bundles"
-          S3_KEY="app-${{ github.sha }}-${{ github.run_id }}.zip"
-          aws s3 cp app.zip s3://$S3_BUCKET/$S3_KEY --region us-east-1
-
-      # Step 9: Create a new application version if it doesn't exist
-      - name: Create EB application version
-        run: |
-          EB_APP_NAME="ci-cd-app"
-          VERSION_LABEL="github-${{ github.sha }}-${{ github.run_id }}"
-          S3_BUCKET="ci-cd-eb-bundles"
-          S3_KEY="app-${{ github.sha }}-${{ github.run_id }}.zip"
-
-          EXISTS=$(aws elasticbeanstalk describe-application-versions \
+    # Step 7: Ensure Elastic Beanstalk application exists
+    - name: Ensure EB application exists
+      run: |
+        if ! aws elasticbeanstalk describe-applications --application-names $EB_APP_NAME --region $AWS_REGION | grep $EB_APP_NAME; then
+          echo "Creating EB application..."
+          aws elasticbeanstalk create-application \
             --application-name $EB_APP_NAME \
-            --version-labels $VERSION_LABEL \
-            --region us-east-1 \
-            --query "ApplicationVersions[].VersionLabel" \
-            --output text)
+            --region $AWS_REGION
+        else
+          echo "EB application exists"
 
-          if [ "$EXISTS" = "$VERSION_LABEL" ]; then
-            echo "Application version $VERSION_LABEL already exists. Skipping creation."
-          else
-            echo "Creating application version $VERSION_LABEL..."
-            aws elasticbeanstalk create-application-version \
-              --application-name $EB_APP_NAME \
-              --version-label $VERSION_LABEL \
-              --source-bundle S3Bucket=$S3_BUCKET,S3Key=$S3_KEY \
-              --region us-east-1
-          fi
+    # Step 8: Upload app.zip to S3
+    - name: Upload app.zip to S3
+      run: |
+        S3_KEY="app-${{ github.sha }}-${{ github.run_id }}.zip"
+        aws s3 cp app.zip s3://$S3_BUCKET/$S3_KEY --region $AWS_REGION
 
-      # Step 10: Ensure EB environment exists (create if missing)
-      - name: Ensure EB environment exists
-        run: |
-          EB_APP_NAME="ci-cd-app"
-          EB_ENV_NAME="ci-cd-env"
-          VERSION_LABEL="github-${{ github.sha }}-${{ github.run_id }}"
+    # Step 9: Create new EB application version
+    - name: Create EB application version
+      run: |
+        VERSION_LABEL="github-${{ github.sha }}-${{ github.run_id }}"
+        S3_KEY="app-${{ github.sha }}-${{ github.run_id }}.zip"
 
-          EXISTING_ENV=$(aws elasticbeanstalk describe-environments \
+        EXISTS=$(aws elasticbeanstalk describe-application-versions \
+          --application-name $EB_APP_NAME \
+          --version-labels $VERSION_LABEL \
+          --region $AWS_REGION \
+          --query "ApplicationVersions[].VersionLabel" \
+          --output text)
+
+        if [ "$EXISTS" = "$VERSION_LABEL" ]; then
+          echo "Version $VERSION_LABEL already exists."
+        else
+          echo "Creating application version $VERSION_LABEL..."
+          aws elasticbeanstalk create-application-version \
             --application-name $EB_APP_NAME \
-            --environment-names $EB_ENV_NAME \
-            --region us-east-1 \
-            --query "Environments[?Status!='Terminated'].EnvironmentName" \
-            --output text)
+            --version-label $VERSION_LABEL \
+            --source-bundle S3Bucket=$S3_BUCKET,S3Key=$S3_KEY \
+            --region $AWS_REGION
+        fi
 
-          if [ -z "$EXISTING_ENV" ]; then
-            echo "Creating EB environment..."
-            aws elasticbeanstalk create-environment \
-              --application-name $EB_APP_NAME \
-              --environment-name $EB_ENV_NAME \
-              --solution-stack-name "64bit Amazon Linux 2023 v6.1.6 running Node.js 20" \
-              --version-label $VERSION_LABEL \
-              --region us-east-1 \
-              --option-settings \
-                Namespace=aws:autoscaling:launchconfiguration,OptionName=InstanceType,Value=t3.micro \
-                Namespace=aws:elasticbeanstalk:environment,OptionName=EnvironmentType,Value=SingleInstance
-          else
-            echo "Updating EB environment..."
-            aws elasticbeanstalk update-environment \
-              --application-name $EB_APP_NAME \
-              --environment-name $EB_ENV_NAME \
-              --version-label $VERSION_LABEL \
-              --region us-east-1
-          fi
+    # Step 10: Ensure EB environment exists (create if missing)
+    - name: Ensure EB environment exists
+      run: |
+        VERSION_LABEL="github-${{ github.sha }}-${{ github.run_id }}"
 
-      # Step 11: Clean up old EB versions
-      - name: Clean up old EB versions
-        run: |
-          EB_APP_NAME="ci-cd-app"
-          OLD_VERSIONS=$(aws elasticbeanstalk describe-application-versions \
+        EXISTING_ENV=$(aws elasticbeanstalk describe-environments \
+          --application-name $EB_APP_NAME \
+          --environment-names $EB_ENV_NAME \
+          --region $AWS_REGION \
+          --query "Environments[?Status!='Terminated'].EnvironmentName" \
+          --output text)
+
+        if [ -z "$EXISTING_ENV" ]; then
+          echo "Creating EB environment cicd-env..."
+          aws elasticbeanstalk create-environment \
             --application-name $EB_APP_NAME \
-            --region us-east-1 \
-            --query "ApplicationVersions[?Status=='UNPROCESSED'].VersionLabel" \
-            --output text)
-          for VERSION in $OLD_VERSIONS; do
-            echo "Deleting old version $VERSION..."
-            aws elasticbeanstalk delete-application-version \
-              --application-name $EB_APP_NAME \
-              --version-label $VERSION \
-              --region us-east-1 \
-              --delete-source-bundle
-          done
+            --environment-name $EB_ENV_NAME \
+            --solution-stack-name "64bit Amazon Linux 2023 v6.6.4 running Node.js 20" \
+            --version-label $VERSION_LABEL \
+            --region $AWS_REGION \
+            --option-settings \
+              Namespace=aws:autoscaling:launchconfiguration,OptionName=InstanceType,Value=t3.micro \
+              Namespace=aws:elasticbeanstalk:environment,OptionName=EnvironmentType,Value=SingleInstance
+        else
+          echo "Updating EB environment cicd-env..."
+          aws elasticbeanstalk update-environment \
+            --application-name $EB_APP_NAME \
+            --environment-name $EB_ENV_NAME \
+            --version-label $VERSION_LABEL \
+            --region $AWS_REGION
+
+    # Step 11: Clean up old EB versions (optional)
+    - name: Clean up old EB versions
+      run: |
+        OLD_VERSIONS=$(aws elasticbeanstalk describe-application-versions \
+          --application-name $EB_APP_NAME \
+          --region $AWS_REGION \
+          --query "ApplicationVersions[?Status=='UNPROCESSED'].VersionLabel" \
+          --output text)
+        for VERSION in $OLD_VERSIONS; do
+          echo "Deleting old version $VERSION..."
+          aws elasticbeanstalk delete-application-version \
+            --application-name $EB_APP_NAME \
+            --version-label $VERSION \
+            --region $AWS_REGION \
+            --delete-source-bundle
