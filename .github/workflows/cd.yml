@@ -34,7 +34,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1  # Your AWS region
+          aws-region: us-east-1  # changed region
 
       # Step 6: Ensure S3 bucket exists (create if missing)
       - name: Ensure S3 bucket exists
@@ -42,7 +42,10 @@ jobs:
           S3_BUCKET="ci-cd-eb-bundles"
           if ! aws s3api head-bucket --bucket $S3_BUCKET 2>/dev/null; then
               echo "Bucket does not exist. Creating..."
-              aws s3api create-bucket --bucket $S3_BUCKET --region ap-south-1 --create-bucket-configuration LocationConstraint=ap-south-1
+              aws s3api create-bucket \
+                  --bucket $S3_BUCKET \
+                  --region us-east-1 \
+                  --create-bucket-configuration LocationConstraint=us-east-1
           else
               echo "Bucket already exists."
           fi
@@ -86,7 +89,7 @@ jobs:
       - name: Deploy to Elastic Beanstalk
         run: |
           EB_APP_NAME="ci-cd-app"
-          EB_ENV_NAME="ci-cd-env"  # Your environment name
+          EB_ENV_NAME="ci-cd-env"
           S3_BUCKET="ci-cd-eb-bundles"
           S3_KEY="app-${{ github.sha }}.zip"
 
