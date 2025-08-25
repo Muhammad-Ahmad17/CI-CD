@@ -16,39 +16,42 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    # Step 1: Checkout code
-    - name: Checkout repository
-      uses: actions/checkout@v3
+      # Step 1: Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    # Step 2: Configure AWS credentials
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      # Step 2: Configure AWS credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    # Step 3: Zip the application
-    - name: Zip application
-      run: |
-        zip -r app.zip .
+      # Step 3: Zip the application
+      - name: Zip application
+        run: |
+          zip -r app.zip .
 
-    # Step 4: Upload to S3
-    - name: Upload to S3
-      run: |
-        aws s3 cp app.zip s3://${{ env.S3_BUCKET }}/app.zip
+      # Step 4: Upload to S3
+      - name: Upload to S3
+        run: |
+          aws s3 cp app.zip s3://${{ env.S3_BUCKET }}/app.zip
 
-    # Step 5: Create EB application version
-    - name: Create EB application version
-      run: |
-        aws elasticbeanstalk create-application-version \
-          --application-name ${{ env.EB_APP_NAME }} \
-          --version-label github-${{ github.sha }} \
-          --source-bundle S3Bucket=${{ env.S3_BUCKET }},S3Key=app.zip
+      # Step 5: Create EB application version with unique label
+      - name: Create EB application version
+        run: |
+          VERSION_LABEL=github-${GITHUB_SHA}-$(date +%s)
+          echo "Using version label: $VERSION_LABEL"
+          aws elasticbeanstalk create-application-version \
+            --application-name ${{ env.EB_APP_NAME }} \
+            --version-label $VERSION_LABEL \
+            --source-bundle S3Bucket=${{ env.S3_BUCKET }},S3Key=app.zip
+          echo "VERSION_LABEL=$VERSION_LABEL" >> $GITHUB_ENV
 
-    # Step 6: Deploy to EB environment
-    - name: Deploy to Elastic Beanstalk
-      run: |
-        aws elasticbeanstalk update-environment \
-          --environment-name ${{ env.EB_ENV_NAME }} \
-          --version-label github-${{ github.sha }}
+      # Step 6: Deploy to Elastic Beanstalk environment
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          aws elasticbeanstalk update-environment \
+            --environment-name ${{ env.EB_ENV_NAME }} \
+            --version-label ${{ env.VERSION_LABEL }}
