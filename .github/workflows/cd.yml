@@ -58,6 +58,23 @@ jobs:
               echo "Elastic Beanstalk application exists."
           fi
 
+      # Step 7.5: Ensure Elastic Beanstalk environment exists
+      - name: Ensure Elastic Beanstalk environment exists
+        run: |
+          EB_APP_NAME="ci-cd-app"
+          EB_ENV_NAME="ci-cd-env"
+          
+          if ! aws elasticbeanstalk describe-environments --application-name $EB_APP_NAME --environment-names $EB_ENV_NAME --query "Environments[?Status!='Terminated'].EnvironmentName" --output text | grep -q $EB_ENV_NAME; then
+              echo "Elastic Beanstalk environment does not exist. Creating..."
+              aws elasticbeanstalk create-environment \
+                  --application-name $EB_APP_NAME \
+                  --environment-name $EB_ENV_NAME \
+                  --solution-stack-name "64bit Amazon Linux 2 v5.5.8 running Node.js 18" \
+                  --version-label github-${{ github.sha }}
+          else
+              echo "Elastic Beanstalk environment exists."
+          fi
+
       # Step 8: Upload zipped app to S3
       - name: Upload app bundle to S3
         run: |
