@@ -110,7 +110,7 @@ jobs:
             aws elasticbeanstalk create-environment \
               --application-name $EB_APP_NAME \
               --environment-name $EB_ENV_NAME \
-              --solution-stack-name "64bit Amazon Linux 2023 v6.1.6 running Node.js 20" \
+              --solution-stack-name "64bit Amazon Linux 2023 v6.6.4 running Node.js 20" \
               --version-label $VERSION_LABEL \
               --region us-east-1 \
               --option-settings \
