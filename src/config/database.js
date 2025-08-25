@@ -1,23 +1,21 @@
+require('dotenv').config();
 const AWS = require('aws-sdk');
 
 let dynamoDB;
 
 const initDatabase = async () => {
-  const isLocal = process.env.IS_LOCAL === 'true'; // set this locally for testing
+  const isLocal = process.env.IS_LOCAL === 'true';
 
   if (isLocal) {
-    // Local DynamoDB (for dev)
     AWS.config.update({
-      region: 'local',
+      region: 'us-east-1',
       endpoint: 'http://localhost:8000',
       accessKeyId: 'dummy',
       secretAccessKey: 'dummy',
     });
   } else {
-    // AWS DynamoDB (for production / EB)
     AWS.config.update({
       region: process.env.AWS_REGION || 'us-east-1',
-      // credentials will be picked from the EB environment IAM role
     });
   }
 
@@ -38,6 +36,7 @@ const initDatabase = async () => {
         },
       };
       await dynamoDB.createTable(params).promise();
+      await dynamoDB.waitFor('tableExists', { TableName: 'Users' }).promise();
       console.log('Created Users table');
     } else {
       throw error;

@@ -1,49 +1,40 @@
 const { getDynamoDB } = require('../config/database');
-const AWS = require('aws-sdk');
 
 class User {
   static async create({ id, name, email }) {
-    const dynamoDB = getDynamoDB();
-    const docClient = new AWS.DynamoDB.DocumentClient({ service: dynamoDB });
-
+    const db = getDynamoDB();
     const params = {
       TableName: 'Users',
       Item: {
-        id,
-        name,
-        email,
+        id: { S: id },
+        name: { S: name },
+        email: { S: email },
       },
     };
-
-    await docClient.put(params).promise();
+    await db.putItem(params).promise();
     return { id, name, email };
   }
 
   static async findAll() {
-    const dynamoDB = getDynamoDB();
-    const docClient = new AWS.DynamoDB.DocumentClient({ service: dynamoDB });
-
-    const params = {
-      TableName: 'Users',
-    };
-
-    const result = await docClient.scan(params).promise();
-    return result.Items;
+    const db = getDynamoDB();
+    const data = await db.scan({ TableName: 'Users' }).promise();
+    return data.Items.map((item) => ({
+      id: item.id.S,
+      name: item.name.S,
+      email: item.email.S,
+    }));
   }
 
-  // Add findById method
   static async findById(id) {
-    const dynamoDB = getDynamoDB();
-    const docClient = new AWS.DynamoDB.DocumentClient({ service: dynamoDB });
-
-    const params = {
+    const db = getDynamoDB();
+    const data = await db.getItem({
       TableName: 'Users',
-      Key: { id },
-    };
-
-    const result = await docClient.get(params).promise();
-    return result.Item; // returns undefined if not found
+      Key: { id: { S: id } },
+    }).promise();
+    if (!data.Item) return null;
+    return { id: data.Item.id.S, name: data.Item.name.S, email: data.Item.email.S };
   }
 }
 
 module.exports = User;
+  
