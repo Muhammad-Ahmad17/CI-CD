@@ -27,3 +27,16 @@ exports.getUsers = async (req, res) => {
 exports.getHello = (req, res) => {
   res.json({ message: 'Hello from API v1!' });
 };
+
+exports.getUserById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = await User.findById(id); // Add this method in your User model
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};

@@ -44,4 +44,28 @@ describe('API Endpoints', () => {
     expect(response.status).toBe(400);
     expect(response.body).toHaveProperty('error', 'Name and email are required');
   });
+
+
+  test('GET /api/v1/users/:id should return a user by ID', async () => {
+  // First, create a user
+  const userData = { name: 'Alice', email: 'alice@example.com' };
+  const createRes = await request(app).post('/api/v1/users').send(userData);
+  const userId = createRes.body.id;
+
+  // Fetch the user by ID
+  const response = await request(app).get(`/api/v1/users/${userId}`);
+  expect(response.status).toBe(200);
+  expect(response.body).toHaveProperty('id', userId);
+  expect(response.body.name).toBe(userData.name);
+  expect(response.body.email).toBe(userData.email);
 });
+
+test('GET /api/v1/users/:id should return 404 if user not found', async () => {
+  const response = await request(app).get('/api/v1/users/nonexistent-id');
+  expect(response.status).toBe(404);
+  expect(response.body).toHaveProperty('error', 'User not found');
+});
+
+});
+
+
