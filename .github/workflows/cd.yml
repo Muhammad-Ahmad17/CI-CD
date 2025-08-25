@@ -3,33 +3,40 @@ name: CD Pipeline
 on:
   push:
     branches:
-      - main  # deploy only when main branch is updated
+      - main  # Trigger pipeline only when main branch is updated
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
+      # Step 1: Checkout the repository
       - name: Checkout repo
         uses: actions/checkout@v4
 
+      # Step 2: Setup Node.js environment
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '18'  # Specify Node.js version
 
+      # Step 3: Install project dependencies
       - name: Install dependencies
         run: npm install
 
+      # Step 4: Zip the entire project
       - name: Zip the app
         run: zip -r app.zip .
 
+      # Step 5: Configure AWS credentials for GitHub Actions
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ap-south-1  
+          aws-region: ap-south-1  # Your AWS region
 
+      # Step 6: Ensure S3 bucket exists (create if missing)
       - name: Ensure S3 bucket exists
         run: |
           S3_BUCKET="ci-cd-eb-bundles"
@@ -40,24 +47,39 @@ jobs:
               echo "Bucket already exists."
           fi
 
+      # Step 7: Ensure Elastic Beanstalk application exists
+      - name: Ensure Elastic Beanstalk app exists
+        run: |
+          EB_APP_NAME="ci-cd-app"
+          if ! aws elasticbeanstalk describe-applications --application-names $EB_APP_NAME | grep $EB_APP_NAME; then
+              echo "Elastic Beanstalk application does not exist. Creating..."
+              aws elasticbeanstalk create-application --application-name $EB_APP_NAME
+          else
+              echo "Elastic Beanstalk application exists."
+          fi
+
+      # Step 8: Upload zipped app to S3
       - name: Upload app bundle to S3
         run: |
           S3_BUCKET="ci-cd-eb-bundles"
           S3_KEY="app-${{ github.sha }}.zip"
           aws s3 cp app.zip s3://$S3_BUCKET/$S3_KEY
 
+      # Step 9: Deploy to Elastic Beanstalk
       - name: Deploy to Elastic Beanstalk
         run: |
           EB_APP_NAME="ci-cd-app"
-          EB_ENV_NAME="ci-cd-env"
+          EB_ENV_NAME="ci-cd-env"  # Your environment name
           S3_BUCKET="ci-cd-eb-bundles"
           S3_KEY="app-${{ github.sha }}.zip"
 
+          # Create a new application version
           aws elasticbeanstalk create-application-version \
             --application-name $EB_APP_NAME \
             --version-label github-${{ github.sha }} \
             --source-bundle S3Bucket=$S3_BUCKET,S3Key=$S3_KEY
 
+          # Update environment to use the new version
           aws elasticbeanstalk update-environment \
             --application-name $EB_APP_NAME \
             --environment-name $EB_ENV_NAME \
