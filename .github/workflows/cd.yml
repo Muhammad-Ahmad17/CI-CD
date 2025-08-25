@@ -1,4 +1,4 @@
-ame: EB Full D Deployment
+name: EB Full D Deployment
 
 on:
   push:
