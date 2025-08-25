@@ -3,104 +3,101 @@ name: CD Pipeline
 on:
   push:
     branches:
-      - main  # Trigger pipeline only when main branch is updated
+      - main  # Trigger pipeline on main branch
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout the repository
+      # Step 1: Checkout repo
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # Step 2: Setup Node.js environment
+      # Step 2: Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'  # Specify Node.js version
+          node-version: '18'
 
-      # Step 3: Install project dependencies
+      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm install
 
-      # Step 4: Zip the entire project
+      # Step 4: Zip the app
       - name: Zip the app
         run: zip -r app.zip .
 
-      # Step 5: Configure AWS credentials for GitHub Actions
+      # Step 5: Configure AWS credentials
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1  # changed region
+          aws-region: us-east-1
 
-      # Step 6: Ensure S3 bucket exists (create if missing)
+      # Step 6: Ensure S3 bucket exists
       - name: Ensure S3 bucket exists
         run: |
           S3_BUCKET="ci-cd-eb-bundles"
           if ! aws s3api head-bucket --bucket $S3_BUCKET 2>/dev/null; then
-              echo "Bucket does not exist. Creating..."
-              aws s3api create-bucket \
-                  --bucket $S3_BUCKET \
-                  --region us-east-1 \
-                  --create-bucket-configuration LocationConstraint=us-east-1
+            echo "Creating S3 bucket..."
+            aws s3api create-bucket --bucket $S3_BUCKET --region us-east-1 --create-bucket-configuration LocationConstraint=us-east-1
           else
-              echo "Bucket already exists."
+            echo "S3 bucket exists"
           fi
 
       # Step 7: Ensure Elastic Beanstalk application exists
-      - name: Ensure Elastic Beanstalk app exists
+      - name: Ensure EB application exists
         run: |
           EB_APP_NAME="ci-cd-app"
           if ! aws elasticbeanstalk describe-applications --application-names $EB_APP_NAME | grep $EB_APP_NAME; then
-              echo "Elastic Beanstalk application does not exist. Creating..."
-              aws elasticbeanstalk create-application --application-name $EB_APP_NAME
+            echo "Creating EB application..."
+            aws elasticbeanstalk create-application --application-name $EB_APP_NAME
           else
-              echo "Elastic Beanstalk application exists."
+            echo "EB application exists"
           fi
 
-      # Step 7.5: Ensure Elastic Beanstalk environment exists
-      - name: Ensure Elastic Beanstalk environment exists
-        run: |
-          EB_APP_NAME="ci-cd-app"
-          EB_ENV_NAME="ci-cd-env"
-          
-          if ! aws elasticbeanstalk describe-environments --application-name $EB_APP_NAME --environment-names $EB_ENV_NAME --query "Environments[?Status!='Terminated'].EnvironmentName" --output text | grep -q $EB_ENV_NAME; then
-              echo "Elastic Beanstalk environment does not exist. Creating..."
-              aws elasticbeanstalk create-environment \
-                  --application-name $EB_APP_NAME \
-                  --environment-name $EB_ENV_NAME \
-                  --solution-stack-name "64bit Amazon Linux 2023 v6.6.4 running Node.js 20" \
-                  --version-label github-${{ github.sha }}
-          else
-              echo "Elastic Beanstalk environment exists."
-          fi
-
-      # Step 8: Upload zipped app to S3
-      - name: Upload app bundle to S3
+      # Step 8: Upload app.zip to S3
+      - name: Upload app to S3
         run: |
           S3_BUCKET="ci-cd-eb-bundles"
           S3_KEY="app-${{ github.sha }}.zip"
           aws s3 cp app.zip s3://$S3_BUCKET/$S3_KEY
 
-      # Step 9: Deploy to Elastic Beanstalk
-      - name: Deploy to Elastic Beanstalk
+      # Step 9: Create a new application version
+      - name: Create EB application version
         run: |
           EB_APP_NAME="ci-cd-app"
-          EB_ENV_NAME="ci-cd-env"
+          VERSION_LABEL="github-${{ github.sha }}"
           S3_BUCKET="ci-cd-eb-bundles"
           S3_KEY="app-${{ github.sha }}.zip"
 
-          # Create a new application version
           aws elasticbeanstalk create-application-version \
             --application-name $EB_APP_NAME \
-            --version-label github-${{ github.sha }} \
+            --version-label $VERSION_LABEL \
             --source-bundle S3Bucket=$S3_BUCKET,S3Key=$S3_KEY
 
-          # Update environment to use the new version
-          aws elasticbeanstalk update-environment \
-            --application-name $EB_APP_NAME \
-            --environment-name $EB_ENV_NAME \
-            --version-label github-${{ github.sha }}
+      # Step 10: Ensure EB environment exists (create if missing)
+      - name: Ensure EB environment exists
+        run: |
+          EB_APP_NAME="ci-cd-app"
+          EB_ENV_NAME="ci-cd-env"
+          VERSION_LABEL="github-${{ github.sha }}"
+
+          EXISTING_ENV=$(aws elasticbeanstalk describe-environments --application-name $EB_APP_NAME --environment-names $EB_ENV_NAME --query "Environments[?Status!='Terminated'].EnvironmentName" --output text)
+
+          if [ -z "$EXISTING_ENV" ]; then
+            echo "Creating EB environment..."
+            aws elasticbeanstalk create-environment \
+              --application-name $EB_APP_NAME \
+              --environment-name $EB_ENV_NAME \
+              --solution-stack-name "64bit Amazon Linux 2023 v6.6.4 running Node.js 20" \
+              --version-label $VERSION_LABEL
+          else
+            echo "Updating EB environment..."
+            aws elasticbeanstalk update-environment \
+              --application-name $EB_APP_NAME \
+              --environment-name $EB_ENV_NAME \
+              --version-label $VERSION_LABEL
+          fi
