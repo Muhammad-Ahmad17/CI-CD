@@ -1,4 +1,4 @@
-name: EB Full CI/CD Deployment
+name: CD Pipeline - Node.js
 
 on:
   push:
@@ -8,135 +8,89 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     env:
-      AWS_REGION: us-east-1
-      EB_APP_NAME: ci-cd-app
-      EB_ENV_NAME: cicd-env
-      S3_BUCKET: ci-cd-eb-bundles
+      AWS_REGION: us-east-1           # embedded region
+      EB_APP_NAME: CICD-app
+      EB_ENV_NAME: CICD-env
+      S3_BUCKET: cicd-eb-bucket
+      VERSION_LABEL: ${{ github.sha }}
 
     steps:
-    # Step 1: Checkout code
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      # 1️⃣ Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    # Step 2: Setup Node.js
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
+      # 2️⃣ Install AWS CLI
+      - name: Install AWS CLI
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install
+          aws --version
 
-    # Step 3: Install dependencies
-    - name: Install dependencies
-      run: npm install
+      # 3️⃣ Configure AWS credentials
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-    # Step 4: Zip the application
-    - name: Zip application
-      run: zip -r app.zip . -x "*.git*"
+      # 4️⃣ Zip application dynamically
+      - name: Zip Application
+        run: |
+          APP_NAME=$(basename $GITHUB_WORKSPACE)
+          ZIP_FILE="${APP_NAME}.zip"
+          echo "Zipping project as $ZIP_FILE"
+          zip -r $ZIP_FILE .
 
-    # Step 5: Configure AWS CLI
-    - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v2
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ env.AWS_REGION }}
+      # 5️⃣ Ensure S3 bucket exists
+      - name: Ensure S3 Bucket
+        run: |
+          aws s3 ls "s3://cicd-eb-bucket" || aws s3 mb "s3://cicd-eb-bucket"
 
-    # Step 6: Ensure S3 bucket exists
-    - name: Ensure S3 bucket exists
-      run: |
-        if ! aws s3api head-bucket --bucket $S3_BUCKET 2>/dev/null; then
-          echo "Creating S3 bucket..."
-          aws s3api create-bucket \
-            --bucket $S3_BUCKET \
-            --region $AWS_REGION \
-            --create-bucket-configuration LocationConstraint=$AWS_REGION
-        else
-          echo "S3 bucket already exists."
+      # 6️⃣ Upload zip to S3
+      - name: Upload to S3
+        run: |
+          APP_NAME=$(basename $GITHUB_WORKSPACE)
+          ZIP_FILE="${APP_NAME}.zip"
+          aws s3 cp $ZIP_FILE s3://cicd-eb-bucket/$ZIP_FILE
 
-    # Step 7: Ensure Elastic Beanstalk application exists
-    - name: Ensure EB application exists
-      run: |
-        if ! aws elasticbeanstalk describe-applications --application-names $EB_APP_NAME --region $AWS_REGION | grep $EB_APP_NAME; then
-          echo "Creating EB application..."
-          aws elasticbeanstalk create-application \
-            --application-name $EB_APP_NAME \
-            --region $AWS_REGION
-        else
-          echo "EB application exists"
+      # 7️⃣ Ensure EB Application
+      - name: Ensure EB Application
+        run: |
+          if ! aws elasticbeanstalk describe-applications --application-names $EB_APP_NAME | grep $EB_APP_NAME; then
+            aws elasticbeanstalk create-application \
+              --application-name $EB_APP_NAME \
+              --description "Node.js App"
+          fi
 
-    # Step 8: Upload app.zip to S3
-    - name: Upload app.zip to S3
-      run: |
-        S3_KEY="app-${{ github.sha }}-${{ github.run_id }}.zip"
-        aws s3 cp app.zip s3://$S3_BUCKET/$S3_KEY --region $AWS_REGION
+      # 8️⃣ Ensure EB Environment
+      - name: Ensure EB Environment
+        run: |
+          if ! aws elasticbeanstalk describe-environments --application-name $EB_APP_NAME --environment-names $EB_ENV_NAME | grep $EB_ENV_NAME; then
+            aws elasticbeanstalk create-environment \
+              --application-name $EB_APP_NAME \
+              --environment-name $EB_ENV_NAME \
+              --solution-stack-name "64bit Amazon Linux 2023 v6.6.4 running Node.js 20" \
+              --region us-east-1
+          fi
 
-    # Step 9: Create new EB application version
-    - name: Create EB application version
-      run: |
-        VERSION_LABEL="github-${{ github.sha }}-${{ github.run_id }}"
-        S3_KEY="app-${{ github.sha }}-${{ github.run_id }}.zip"
-
-        EXISTS=$(aws elasticbeanstalk describe-application-versions \
-          --application-name $EB_APP_NAME \
-          --version-labels $VERSION_LABEL \
-          --region $AWS_REGION \
-          --query "ApplicationVersions[].VersionLabel" \
-          --output text)
-
-        if [ "$EXISTS" = "$VERSION_LABEL" ]; then
-          echo "Version $VERSION_LABEL already exists."
-        else
-          echo "Creating application version $VERSION_LABEL..."
+      # 9️⃣ Create application version
+      - name: Create Application Version
+        run: |
+          APP_NAME=$(basename $GITHUB_WORKSPACE)
+          ZIP_FILE="${APP_NAME}.zip"
           aws elasticbeanstalk create-application-version \
             --application-name $EB_APP_NAME \
             --version-label $VERSION_LABEL \
-            --source-bundle S3Bucket=$S3_BUCKET,S3Key=$S3_KEY \
-            --region $AWS_REGION
-        fi
+            --source-bundle S3Bucket=cicd-eb-bucket,S3Key=$ZIP_FILE
 
-    # Step 10: Ensure EB environment exists (create if missing)
-    - name: Ensure EB environment exists
-      run: |
-        VERSION_LABEL="github-${{ github.sha }}-${{ github.run_id }}"
-
-        EXISTING_ENV=$(aws elasticbeanstalk describe-environments \
-          --application-name $EB_APP_NAME \
-          --environment-names $EB_ENV_NAME \
-          --region $AWS_REGION \
-          --query "Environments[?Status!='Terminated'].EnvironmentName" \
-          --output text)
-
-        if [ -z "$EXISTING_ENV" ]; then
-          echo "Creating EB environment cicd-env..."
-          aws elasticbeanstalk create-environment \
-            --application-name $EB_APP_NAME \
-            --environment-name $EB_ENV_NAME \
-            --solution-stack-name "64bit Amazon Linux 2023 v6.6.4 running Node.js 20" \
-            --version-label $VERSION_LABEL \
-            --region $AWS_REGION \
-            --option-settings \
-              Namespace=aws:autoscaling:launchconfiguration,OptionName=InstanceType,Value=t3.micro \
-              Namespace=aws:elasticbeanstalk:environment,OptionName=EnvironmentType,Value=SingleInstance
-        else
-          echo "Updating EB environment cicd-env..."
+      # 🔟 Deploy to environment
+      - name: Deploy to EB
+        run: |
           aws elasticbeanstalk update-environment \
             --application-name $EB_APP_NAME \
             --environment-name $EB_ENV_NAME \
-            --version-label $VERSION_LABEL \
-            --region $AWS_REGION
-
-    # Step 11: Clean up old EB versions (optional)
-    - name: Clean up old EB versions
-      run: |
-        OLD_VERSIONS=$(aws elasticbeanstalk describe-application-versions \
-          --application-name $EB_APP_NAME \
-          --region $AWS_REGION \
-          --query "ApplicationVersions[?Status=='UNPROCESSED'].VersionLabel" \
-          --output text)
-        for VERSION in $OLD_VERSIONS; do
-          echo "Deleting old version $VERSION..."
-          aws elasticbeanstalk delete-application-version \
-            --application-name $EB_APP_NAME \
-            --version-label $VERSION \
-            --region $AWS_REGION \
-            --delete-source-bundle
+            --version-label $VERSION_LABEL
