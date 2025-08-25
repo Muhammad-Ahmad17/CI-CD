@@ -65,7 +65,7 @@ jobs:
           S3_KEY="app-${{ github.sha }}.zip"
           aws s3 cp app.zip s3://$S3_BUCKET/$S3_KEY
 
-      # Step 9: Create a new application version
+      # Step 9: Create a new application version if it doesn't exist
       - name: Create EB application version
         run: |
           EB_APP_NAME="ci-cd-app"
@@ -73,10 +73,17 @@ jobs:
           S3_BUCKET="ci-cd-eb-bundles"
           S3_KEY="app-${{ github.sha }}.zip"
 
-          aws elasticbeanstalk create-application-version \
-            --application-name $EB_APP_NAME \
-            --version-label $VERSION_LABEL \
-            --source-bundle S3Bucket=$S3_BUCKET,S3Key=$S3_KEY
+          # Check if version exists
+          if aws elasticbeanstalk describe-application-versions --application-name $EB_APP_NAME --version-labels $VERSION_LABEL --query "ApplicationVersions[0].VersionLabel" --output text | grep -q $VERSION_LABEL; then
+            echo "Application version $VERSION_LABEL already exists. Skipping creation."
+          else
+            echo "Creating application version $VERSION_LABEL..."
+            aws elasticbeanstalk create-application-version \
+              --application-name $EB_APP_NAME \
+              --version-label $VERSION_LABEL \
+              --source-bundle S3Bucket=$S3_BUCKET,S3Key=$S3_KEY
+          fi
+
 
       # Step 10: Ensure EB environment exists (create if missing)
       - name: Ensure EB environment exists
