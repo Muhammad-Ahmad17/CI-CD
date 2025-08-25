@@ -1,0 +1,54 @@
+name: CD Pipeline
+
+on:
+  push:
+    branches:
+      - main  # deploy only when main branch is updated
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Zip the app
+        run: zip -r app.zip .
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1  
+
+      - name: Upload app bundle to S3
+        run: |
+          S3_BUCKET="ci-cd-eb-bundles"
+          S3_KEY="app-${{ github.sha }}.zip"
+          aws s3 cp app.zip s3://$S3_BUCKET/$S3_KEY
+
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          EB_APP_NAME="ci-cd-app"
+          EB_ENV_NAME="ci-cd-env"
+          S3_BUCKET="ci-cd-eb-bundles"
+          S3_KEY="app-${{ github.sha }}.zip"
+
+          aws elasticbeanstalk create-application-version \
+            --application-name $EB_APP_NAME \
+            --version-label github-${{ github.sha }} \
+            --source-bundle S3Bucket=$S3_BUCKET,S3Key=$S3_KEY
+
+          aws elasticbeanstalk update-environment \
+            --application-name $EB_APP_NAME \
+            --environment-name $EB_ENV_NAME \
+            --version-label github-${{ github.sha }}
