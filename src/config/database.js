@@ -3,17 +3,26 @@ const AWS = require('aws-sdk');
 let dynamoDB;
 
 const initDatabase = async () => {
-  // Configure AWS SDK for local DynamoDB
-  AWS.config.update({
-    region: 'local',
-    endpoint: 'http://localhost:8000',
-    accessKeyId: 'dummy',
-    secretAccessKey: 'dummy',
-  });
+  const isLocal = process.env.IS_LOCAL === 'true'; // set this locally for testing
+
+  if (isLocal) {
+    // Local DynamoDB (for dev)
+    AWS.config.update({
+      region: 'local',
+      endpoint: 'http://localhost:8000',
+      accessKeyId: 'dummy',
+      secretAccessKey: 'dummy',
+    });
+  } else {
+    // AWS DynamoDB (for production / EB)
+    AWS.config.update({
+      region: process.env.AWS_REGION || 'us-east-1',
+      // credentials will be picked from the EB environment IAM role
+    });
+  }
 
   dynamoDB = new AWS.DynamoDB();
 
-  // Check if table exists, create if not
   try {
     await dynamoDB.describeTable({ TableName: 'Users' }).promise();
     console.log('Users table already exists');
@@ -21,12 +30,8 @@ const initDatabase = async () => {
     if (error.code === 'ResourceNotFoundException') {
       const params = {
         TableName: 'Users',
-        KeySchema: [
-          { AttributeName: 'id', KeyType: 'HASH' }, // Partition key
-        ],
-        AttributeDefinitions: [
-          { AttributeName: 'id', AttributeType: 'S' },
-        ],
+        KeySchema: [{ AttributeName: 'id', KeyType: 'HASH' }],
+        AttributeDefinitions: [{ AttributeName: 'id', AttributeType: 'S' }],
         ProvisionedThroughput: {
           ReadCapacityUnits: 5,
           WriteCapacityUnits: 5,
