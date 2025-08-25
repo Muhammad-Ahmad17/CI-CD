@@ -7,7 +7,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
-  EB_APP_NAME: ci-cd-env
+  EB_APP_NAME: cicd-env
   EB_ENV_NAME: Cicd-env-env
   S3_BUCKET: ci-cd-eb-bundles
 
