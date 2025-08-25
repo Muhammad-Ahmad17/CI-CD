@@ -72,7 +72,7 @@ jobs:
               aws elasticbeanstalk create-environment \
                   --application-name $EB_APP_NAME \
                   --environment-name $EB_ENV_NAME \
-                  --solution-stack-name "64bit Amazon Linux 2 v5.5.8 running Node.js 18" \
+                  --solution-stack-name "64bit Amazon Linux 2023 v6.6.4 running Node.js 20" \
                   --version-label github-${{ github.sha }}
           else
               echo "Elastic Beanstalk environment exists."
