@@ -1,57 +1,109 @@
-# Node.js Server with Local DynamoDB and Tests
- 
+# Node.js Server with Local DynamoDB and CI/CD
+
 ## Prerequisites
-- Node.js (v16 or higher)
+- Node.js v16 or higher
 - Docker (for running local DynamoDB)
+- AWS account (for CD deployment)
+- GitHub repository
 
 
-1.
+## Setup (Local Development)
+1. Clone the repository and delete the `.github` folder (if present).  
+2. Install dependencies:
+   ```
+   npm install
+   ```
 
-## Setup
-0. clone the repo and delete .github folder .
-1. Install dependencies: `npm install`
-2. Start local DynamoDB:
-   - Run `npm run dynamodb` to start DynamoDB in Docker
-   - Ensure port 8000 is available
-3. Run the server: `npm start`
-4. Run tests: `npm test`
+3. Start local DynamoDB in Docker:
 
-## Endpoints
-- `GET /api/v1/hello`: Returns a hello message
-- `POST /api/v1/users`: Creates a new user (requires `name` and `email`)
-- `GET /api/v1/users`: Lists all users
+   ```bash
+   npm run dynamodb
+   ```
+
+   * Ensure port `8000` is available.
+4. Run the server:
+
+   ```bash
+   npm start
+   ```
+5. Run tests:
+
+   ```bash
+   npm test
+   ```
+
+---
+
+## API Endpoints
+
+* `GET /api/v1/hello`: Returns a hello message
+* `POST /api/v1/users`: Creates a new user (requires `name` and `email`)
+* `GET /api/v1/users`: Lists all users
+
+---
 
 ## Database
-- Uses local DynamoDB running on `http://localhost:8000`
-- Stores users in a `Users` table with `id` (partition key), `name`, and `email`
+
+* Uses **local DynamoDB** at `http://localhost:8000`
+* `Users` table automatically created on server startup with fields:
+
+  * `id` (partition key)
+  * `name`
+  * `email`
+
+---
 
 ## Testing
-- Uses Jest and Supertest for API testing
-- Tests cover basic CRUD operations and error cases
 
-## Notes
-- Ensure Docker is running before starting the local DynamoDB instance.
-- The `Users` table is created automatically on server startup.
-- Tests clean up the table after completion. 
+* Uses **Jest** and **Supertest** for API testing
+* Tests cover basic CRUD operations and error cases
+* Tests clean up the table after completion
 
+> **Note:** Ensure Docker is running before starting DynamoDB.
 
-2. push this to your own repo 
+---
 
-3.
- create .github/workflows/ci.yml 
- push code to repo again with some code changing like add new api in user and also write its test 
- this will check your ci is working accuratly 
+## CI Workflow
 
-4.
-now we writte cd 
--- prereqs :
-      1 create iam user with acess to s3 and elasticbestalk
-      2 from root user go to user which you created 
-      3 security-credentials -> acess-key -> select aws-cli and generate that key and save 
-      4 now go to github/your-repo -> setings ->securits and variable -> actions -> new repo securits add 
-         AWS_ACCESS_KEY_ID
-         AWS_SECRET_ACCESS_KEY
-now 
-   crete cd.yml file in workfows make to select your prefered region 
-   push to github 
+1. Push your repository to GitHub.
+2. Create `.github/workflows/ci.yml`.
+3. Make some changes in the code (e.g., add a new API or test) and push again.
+4. GitHub Actions will run the CI workflow to verify your code changes.
 
+---
+
+## CD Workflow (Elastic Beanstalk)
+
+### Prerequisites
+
+1. Create an **IAM user** with access to S3 and Elastic Beanstalk.
+
+2. Go to **Security Credentials → Access Keys** for the new user and save the keys.
+
+3. Add repository secrets in GitHub:
+
+   * `AWS_ACCESS_KEY_ID`
+   * `AWS_SECRET_ACCESS_KEY`
+
+4. Create an **S3 bucket** in AWS.
+
+5. Create an **Elastic Beanstalk application and environment**.
+
+### Environment Variables for CD
+
+```yaml
+AWS_REGION: us-east-1
+EB_APP_NAME: <your-app>
+EB_ENV_NAME: <your-env>
+S3_BUCKET: <your-bucket>
+```
+
+### Steps
+
+1. Create `.github/workflows/cd.yml` and configure it for your region.
+2. Push changes to GitHub.
+3. The workflow will automatically deploy your app to Elastic Beanstalk.
+
+> After deployment, test your endpoints using the EB environment URL.
+
+---
